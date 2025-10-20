@@ -4,19 +4,19 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-
+use App\Models\Concerns\BelongsToUser;
+use Illuminate\Database\Eloquent\SoftDeletes;
 class Post extends Model
 {
-    use HasFactory, \Illuminate\Database\Eloquent\SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToUser;
 
     protected $fillable = [
         'user_id',
         'text',
         'media_path',
         'thumbnail_path',
-        'city',
-        'state',
-        'status'
+        'status',
+        'pais_regiao_cidade_id'
     ];
 
     public function user() {

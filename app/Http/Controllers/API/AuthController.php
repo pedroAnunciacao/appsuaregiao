@@ -8,6 +8,8 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Validator;
+use App\Http\Resources\User\UserResource;
+
 
 class AuthController extends Controller
 {
@@ -89,6 +91,14 @@ class AuthController extends Controller
         $request->user()->currentAccessToken()->delete();
         return response()->json(['message' => 'Logout realizado com sucesso.']);
     }
+
+
+    /**
+     * Return authenticated user info
+     */
+    public function me(Request $request)
+    {
+        $user = $request->user();
+        return new UserResource($user);
+    }
 }
-
-

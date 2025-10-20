@@ -12,6 +12,8 @@ use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\Admin\SettingController;
 // use App\Http\Controllers\Admin\LocationController;
 use App\Http\Controllers\LocationController;
+use App\Http\Middleware\BindRequestFilter;
+
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -42,7 +44,8 @@ Route::post('password/email', [PasswordResetController::class,'sendResetEmail'])
 Route::post('password/reset', [PasswordResetController::class,'resetPassword']);
 
 // Rotas protegidas pelo Sanctum
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', BindRequestFilter::class])->group(function () {
+Route::get('auth/me', [AuthController::class, 'me']);
 
     // Logout
     Route::post('auth/logout', [AuthController::class, 'logout']);
