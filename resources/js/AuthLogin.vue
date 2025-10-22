@@ -44,12 +44,6 @@ export default {
           password: this.password
         });
         localStorage.setItem('token', res.data.token);
-
-        // Salva o ID do usuário no localStorage para ser usado no header X-Content
-        if (res.data.user && res.data.user.id) {
-          localStorage.setItem('id', res.data.user.id);
-        }
-
         this.$emit('login-success');
       } catch (err) {
         this.error = err.response?.data?.message || 'Credenciais inválidas';
