@@ -37,27 +37,46 @@ class PostController extends Controller
 
     public function update(UpdatePostRequest $request)
     {
-        $post = $this->service->update($request);
-        return new PostResource($post);
+        try {
+            $post = $this->service->update($request);
+            return new PostResource($post);
+        } catch (\Exception $e) {
+            dd($e);
+            return response()->json(['message' => 'Erro ao editar post.'], 500);
+        }
     }
 
     public function delete(int $id)
     {
-        $post = $this->service->destroy($id);
-        return new PostResource($post);
+        try {
+            $post = $this->service->destroy($id);
+            return new PostResource($post);
+        } catch (\Exception $e) {
+            dd($e);
+            return response()->json(['message' => 'Erro ao deletar post.'], 500);
+        }
     }
 
 
     public function show(int $id)
     {
-        $post = $this->service->show($id);
-        return new PostResource($post);
+        try {
+            $post = $this->service->show($id);
+            return new PostResource($post);
+        } catch (\Exception $e) {
+            dd($e);
+            return response()->json(['message' => 'Erro ao buscar post.'], 500);
+        }
     }
-
 
     public function restore(int $id)
     {
-        $post = $this->service->restore($id);
-        return new PostResource($post);
+        try {
+            $post = $this->service->restore($id);
+            return new PostResource($post);
+        } catch (\Exception $e) {
+            dd($e);
+            return response()->json(['message' => 'Erro ao buscar post.'], 500);
+        }
     }
 }

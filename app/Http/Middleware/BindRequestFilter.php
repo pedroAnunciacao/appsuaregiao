@@ -14,9 +14,15 @@ class BindRequestFilter
             $user = User::find($request->header('X-Content'));
 
             if ($user) {
+                if ($request->header('X-region_selected')) {
+                    $paisRegiaoCidadeId =  $request->header('X-region_selected');
+                } else {
+                    $paisRegiaoCidadeId = $user->pais_regiao_cidade_id;
+                }
+
                 $params = [
                     'user_id' => $user->id,
-                    'pais_regiao_cidade_id' => $user->pais_regiao_cidade_id
+                    'pais_regiao_cidade_id' => $paisRegiaoCidadeId
                 ];
                 $request->merge($params);
             }

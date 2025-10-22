@@ -63,9 +63,18 @@ class PostService
 
     public function update(UpdatePostRequest $request)
     {
-        $data = $request->post;
-        $post = $this->repository->findOrFail($data['id']);
-        $post->update($data);
+        $path = null;
+        if ($request->hasFile('thumbnail_path') && $request->file('thumbnail_path')->isValid()) {
+            $file = $request->file('thumbnail_path');
+            $filename = time() . '_' . $file->getClientOriginalName();
+
+            $file->storeAs('post', $filename, 'public');
+            $path = asset('storage/post/' . $filename);
+        }
+
+        $postData = $request->validated();
+        $post = $this->repository->findOrFail($postData['id']);
+        $post->update($postData);
         return $post;
     }
 
