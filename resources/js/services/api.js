@@ -21,6 +21,19 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    // Adiciona X-Content com o ID do usuário
+    const userId = localStorage.getItem('id');
+    if (userId) {
+      config.headers['X-Content'] = userId;
+    }
+
+    // Adiciona X-region_selected se existir uma região selecionada
+    const selectedRegion = localStorage.getItem('selected_region_id');
+    if (selectedRegion) {
+      config.headers['X-region_selected'] = selectedRegion;
+    }
+
     return config;
   },
   (error) => Promise.reject(error)
