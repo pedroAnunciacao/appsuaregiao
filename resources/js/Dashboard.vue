@@ -1,105 +1,361 @@
 <template>
 <div>
-  <!-- Modal de localização -->
-  <div v-if="showLocationModal" class="location-modal">
-    <form @submit.prevent="confirmLocation">
-      <h2>Onde você está?</h2>
-      <div class="location-selects">
-        <select v-model="modalCountry" @change="selectCountry(modalCountry)">
-          <option value="">Selecione o país</option>
-          <option v-for="country in countries" :key="country" :value="country">{{ country }}</option>
-        </select>
-        <template v-if="modalCountry === 'Brasil'">
-          <select v-if="states.length" v-model="modalState">
-            <option value="">Selecione o estado</option>
-            <option v-for="state in states" :key="state" :value="state">{{ normalizeName(state) }}</option>
-          </select>
-          <select v-if="cities.length" v-model="modalCity">
-            <option value="">Selecione a cidade</option>
-            <option v-for="city in cities" :key="city" :value="city">{{ normalizeName(city) }}</option>
-          </select>
-        </template>
-        <template v-else>
-          <input v-model="modalCity" type="text" placeholder="Digite sua cidade" />
-        </template>
-      </div>
-      <button type="submit" class="location-confirm-btn">Confirmar localização</button>
-    </form>
-  </div>
   <div class="layout">
-    <div class="content-area">
-      <section class="hero">
-        <div class="tv-header">
-          <div class="tv-title">Sua Tv (Ao Vivo)</div>
-          <div class="tv-video">
-            <template v-if="youtubeUrl && youtubeUrl !== 'https://www.youtube.com/embed/4Q46xYqUwZQ'">
-              <iframe
-                :src="youtubeUrl"
-                width="100%"
-                height="180"
-                frameborder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowfullscreen
-                class="tv-iframe"
-              ></iframe>
-            </template>
-            <template v-else>
-              <img src="https://i.imgur.com/1Q46xYq.jpg" alt="tv ao vivo" class="tv-img" />
-              <div class="tv-play">▶</div>
-            </template>
-          </div>
-          <div class="tv-post">
-            <div class="tv-post-title">Sua Postagem</div>
-            <div class="tv-post-desc">Publique aqui textos, fotos e vídeos da sua cidade.</div>
+    <!-- Calendário fixo no topo (substituindo "Sua Vida" e "Sua TV") -->
+    <div class="calendar-fixed">
+      <div class="calendar-container">
+        <div class="calendar-month">
+          <button class="calendar-nav-btn" @click="previousMonth">‹</button>
+          <span class="calendar-month-text">{{ currentMonthName }} {{ currentYear }}</span>
+          <button class="calendar-nav-btn" @click="nextMonth">›</button>
+        </div>
+        <div class="calendar-weekdays">
+          <div class="calendar-weekday">D</div>
+          <div class="calendar-weekday">S</div>
+          <div class="calendar-weekday">T</div>
+          <div class="calendar-weekday">Q</div>
+          <div class="calendar-weekday">Q</div>
+          <div class="calendar-weekday">S</div>
+          <div class="calendar-weekday">S</div>
+        </div>
+        <div class="calendar-days">
+          <div
+            v-for="day in calendarDays"
+            :key="day.key"
+            class="calendar-day"
+            :class="{
+              'calendar-day-empty': !day.day,
+              'calendar-day-today': day.isToday,
+              'calendar-day-selected': day.isSelected
+            }"
+            @click="selectDay(day)"
+          >
+            {{ day.day }}
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Área de conteúdo agora começa após o calendário -->
+    <div class="content-area">
+      <!-- Seção "Sua Postagem" e "Terra" -->
+      <section class="hero">
+        <div class="tv-post">
+          <div class="tv-post-title">Sua Postagem</div>
+          <div class="tv-post-desc">Publique aqui textos, fotos e vídeos da sua cidade.</div>
+        </div>
         <div class="city-country">
-          <span class="city-country-text">{{ countryText }}</span>
+          <span class="city-country-text">{{ locationText }}</span>
         </div>
         <div class="logo-central">
           <img :src="logoSrc" alt="Logo" class="logo-img" />
         </div>
       </section>
-      <div class="posts-list">
-        <div v-for="post in filteredPosts" :key="post.id" class="post-item">
-          <div class="post-user">{{ post.user?.name }}</div>
-          <div class="post-date">{{ formatDate(post.created_at) }}</div>
-          <div class="post-content">{{ post.content }}</div>
-          <div v-if="post.media_url" class="post-media">
-            <img :src="post.media_url" alt="media" />
-          </div>
+
+      <!-- Banner informativo da cidade selecionada -->
+      <div v-if="selectedCityId && selectedCityId !== userDefaultCityId" class="city-info-banner">
+        <div class="city-info-text">
+          Você está vendo posts de <strong>{{ getCityName() }}</strong>
         </div>
-        <button v-if="isInOwnCityView" class="central-floating-btn" @click="openCreate">
-          <span class="plus-sign">+</span>
+        <button class="city-info-btn" @click="resetToUserCity">
+          Voltar para sua cidade
         </button>
       </div>
+
+      <!-- Display posts with thumbnails, text preview, comments and likes -->
+      <div class="posts-list">
+        <div v-if="isLoading" class="loading">Carregando posts...</div>
+        <div v-else-if="posts.length === 0" class="no-posts">Nenhum post encontrado</div>
+        <div v-else v-for="post in posts" :key="post.id" class="post-item">
+          <div class="post-header">
+            <div class="post-user">{{ post.user?.name || 'Usuário' }}</div>
+            <div class="post-date">{{ formatDate(post.created_at) }}</div>
+          </div>
+          <!-- Imagem ANTES do texto (como no Instagram) -->
+          <div v-if="post.thumbnail_path" class="post-media">
+            <img :src="post.thumbnail_path" alt="Post media" />
+          </div>
+          <!-- Preview do texto com botão "Ver mais" -->
+          <div class="post-content">
+            <template v-if="isPostExpanded(post.id)">
+              {{ post.text || post.content }}
+            </template>
+            <template v-else>
+              {{ getPostPreview(post.text || post.content) }}
+            </template>
+            <button
+              v-if="shouldShowReadMore(post.text || post.content)"
+              class="read-more-btn"
+              @click="togglePostExpansion(post.id)"
+            >
+              {{ isPostExpanded(post.id) ? 'Ver menos' : 'Ver mais...' }}
+            </button>
+          </div>
+
+          <!-- Adicionada seção de likes e comentários -->
+          <div class="post-actions">
+            <div class="post-likes">
+              <span class="like-icon">❤️</span>
+              <span class="like-count">{{ post.likes_count || 0 }} curtidas</span>
+            </div>
+          </div>
+
+          <!-- Seção de comentários -->
+          <div v-if="post.comments && post.comments.length > 0" class="post-comments">
+            <div class="comments-title">Comentários ({{ post.comments.length }})</div>
+            <div v-for="(comment, index) in post.comments" :key="index" class="comment-item">
+              <div class="comment-user">{{ comment.user?.name || 'Usuário' }}</div>
+              <div class="comment-body">{{ comment.body }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <!-- Menu lateral agora tem botão para abrir modal em mobile -->
     <aside class="right-sidebar">
       <div class="weather">
         <div class="weather-icon">☁️</div>
         <div class="weather-temp">{{ weather.temp }}°C</div>
         <div class="weather-desc">{{ weather.desc }}</div>
       </div>
-      <div class="country-list-scroll">
-        <div class="country-list">
-          <button
-            v-for="(country, i) in Object.values(countryMap).map(c => c.name)"
-            :key="i"
-            class="country-btn"
-            @click="filterPostsByCountry(country)"
-          >
-            {{ country }}
-          </button>
+
+      <div class="location-menu">
+        <!-- Nível 1: Continentes -->
+        <div v-if="sidebarStep === 'continent'" class="menu-section">
+          <h3 class="menu-title">Continentes</h3>
+          <!-- Alterado para coluna única (1fr) -->
+          <div class="checkbox-grid-sidebar">
+            <label
+              v-for="continent in continents"
+              :key="continent.id"
+              class="checkbox-item-sidebar"
+            >
+              <input
+                type="checkbox"
+                :value="continent.id"
+                :checked="selectedContinentId === continent.id"
+                @change="selectContinentSidebar(continent.id)"
+              />
+              <span class="checkbox-label-sidebar">{{ continent.nome }}</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Nível 2: Países -->
+        <div v-if="sidebarStep === 'country'" class="menu-section">
+          <h3 class="menu-title">Países</h3>
+          <button class="back-btn-sidebar" @click="sidebarGoBackToContinent">← Voltar</button>
+          <div class="checkbox-grid-sidebar">
+            <label
+              v-for="country in countries"
+              :key="country.id"
+              class="checkbox-item-sidebar"
+            >
+              <input
+                type="checkbox"
+                :value="country.id"
+                :checked="selectedCountryId === country.id"
+                @change="selectCountrySidebar(country.id)"
+              />
+              <span class="checkbox-label-sidebar">{{ country.nome }}</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Nível 3: Regiões -->
+        <div v-if="sidebarStep === 'region'" class="menu-section">
+          <h3 class="menu-title">Regiões</h3>
+          <button class="back-btn-sidebar" @click="sidebarGoBackToCountry">← Voltar</button>
+          <div class="checkbox-grid-sidebar">
+            <label
+              v-for="region in regions"
+              :key="region.id"
+              class="checkbox-item-sidebar"
+            >
+              <input
+                type="checkbox"
+                :value="region.id"
+                :checked="selectedRegionId === region.id"
+                @change="selectRegionSidebar(region.id)"
+              />
+              <span class="checkbox-label-sidebar">{{ region.nome }}</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Nível 4: Cidades -->
+        <div v-if="sidebarStep === 'city'" class="menu-section">
+          <h3 class="menu-title">Cidades</h3>
+          <button class="back-btn-sidebar" @click="sidebarGoBackToRegion">← Voltar</button>
+          <div class="checkbox-grid-sidebar">
+            <label
+              v-for="city in cities"
+              :key="city.id"
+              class="checkbox-item-sidebar"
+            >
+              <input
+                type="checkbox"
+                :value="city.id"
+                :checked="selectedCityId === city.id"
+                @change="selectCitySidebar(city.id)"
+              />
+              <span class="checkbox-label-sidebar">{{ city.nome }}</span>
+            </label>
+          </div>
         </div>
       </div>
     </aside>
+
+    <!-- Botão flutuante para abrir menu em mobile (oculto em desktop) -->
+    <button class="mobile-menu-btn" @click="toggleMobileMenu">
+      ☰
+    </button>
   </div>
+
+  <!-- Modal de menu para mobile -->
+  <div v-if="showMobileMenu" class="mobile-menu-overlay" @click="closeMobileMenu">
+    <div class="mobile-menu-modal" @click.stop>
+      <div class="mobile-menu-header">
+        <h3>Selecione sua localização</h3>
+        <button class="mobile-menu-close" @click="closeMobileMenu">✕</button>
+      </div>
+      <div class="mobile-menu-body">
+        <div class="location-menu">
+          <!-- Nível 1: Continentes -->
+          <div v-if="sidebarStep === 'continent'" class="menu-section">
+            <h3 class="menu-title">Continentes</h3>
+            <div class="checkbox-grid-sidebar">
+              <label
+                v-for="continent in continents"
+                :key="continent.id"
+                class="checkbox-item-sidebar"
+              >
+                <input
+                  type="checkbox"
+                  :value="continent.id"
+                  :checked="selectedContinentId === continent.id"
+                  @change="selectContinentSidebar(continent.id)"
+                />
+                <span class="checkbox-label-sidebar">{{ continent.nome }}</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Nível 2: Países -->
+          <div v-if="sidebarStep === 'country'" class="menu-section">
+            <h3 class="menu-title">Países</h3>
+            <button class="back-btn-sidebar" @click="sidebarGoBackToContinent">← Voltar</button>
+            <div class="checkbox-grid-sidebar">
+              <label
+                v-for="country in countries"
+                :key="country.id"
+                class="checkbox-item-sidebar"
+              >
+                <input
+                  type="checkbox"
+                  :value="country.id"
+                  :checked="selectedCountryId === country.id"
+                  @change="selectCountrySidebar(country.id)"
+                />
+                <span class="checkbox-label-sidebar">{{ country.nome }}</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Nível 3: Regiões -->
+          <div v-if="sidebarStep === 'region'" class="menu-section">
+            <h3 class="menu-title">Regiões</h3>
+            <button class="back-btn-sidebar" @click="sidebarGoBackToCountry">← Voltar</button>
+            <div class="checkbox-grid-sidebar">
+              <label
+                v-for="region in regions"
+                :key="region.id"
+                class="checkbox-item-sidebar"
+              >
+                <input
+                  type="checkbox"
+                  :value="region.id"
+                  :checked="selectedRegionId === region.id"
+                  @change="selectRegionSidebar(region.id)"
+                />
+                <span class="checkbox-label-sidebar">{{ region.nome }}</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Nível 4: Cidades -->
+          <div v-if="sidebarStep === 'city'" class="menu-section">
+            <h3 class="menu-title">Cidades</h3>
+            <button class="back-btn-sidebar" @click="sidebarGoBackToRegion">← Voltar</button>
+            <div class="checkbox-grid-sidebar">
+              <label
+                v-for="city in cities"
+                :key="city.id"
+                class="checkbox-item-sidebar"
+              >
+                <input
+                  type="checkbox"
+                  :value="city.id"
+                  :checked="selectedCityId === city.id"
+                  @change="selectCitySidebar(city.id)"
+                />
+                <span class="checkbox-label-sidebar">{{ city.nome }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de calendário "Sua Vida" -->
+  <div v-if="showCalendarModal" class="calendar-modal-overlay" @click="closeCalendarModal">
+    <div class="calendar-modal" @click.stop>
+      <div class="calendar-header">Sua Vida</div>
+      <div class="calendar-body">
+        <div class="calendar-month">
+          <button class="calendar-nav-btn" @click="previousMonth">‹</button>
+          <span class="calendar-month-text">{{ currentMonthName }} {{ currentYear }}</span>
+          <button class="calendar-nav-btn" @click="nextMonth">›</button>
+        </div>
+        <div class="calendar-weekdays">
+          <div class="calendar-weekday">D</div>
+          <div class="calendar-weekday">S</div>
+          <div class="calendar-weekday">T</div>
+          <div class="calendar-weekday">Q</div>
+          <div class="calendar-weekday">Q</div>
+          <div class="calendar-weekday">S</div>
+          <div class="calendar-weekday">S</div>
+        </div>
+        <div class="calendar-days">
+          <div
+            v-for="day in calendarDays"
+            :key="day.key"
+            class="calendar-day"
+            :class="{
+              'calendar-day-empty': !day.day,
+              'calendar-day-today': day.isToday,
+              'calendar-day-selected': day.isSelected
+            }"
+            @click="selectDay(day)"
+          >
+            {{ day.day }}
+          </div>
+        </div>
+      </div>
+      <button class="calendar-btn-new-post" @click="openCreate">Nova publicação</button>
+    </div>
+  </div>
+
+  <!-- Barra de navegação inferior com botão "+" entre Home e Região -->
   <nav class="bottom-nav">
     <button @click="nav('home')">Home</button>
+    <button class="add-post-btn" @click="openCreate">+</button>
     <button @click="nav('region')">Região</button>
-  <button v-if="userEmail === 'admin@gmail.com'" @click="$emit('go-admin-dashboard')" style="margin: 0 24px;">Painel Admin</button>
+    <button v-if="isAdmin" @click="$emit('go-admin-dashboard')">Admin</button>
     <button @click="nav('history')">Histórico</button>
-    <button @click="nav('account')">Minha Conta</button>
+    <button @click="nav('account')">Conta</button>
   </nav>
 </div>
 </template>
@@ -178,7 +434,7 @@ const countryMap = {
   "Greenland": { name: "Groenlândia", code: "GL" },
   "Iceland": { name: "Islândia", code: "IS" },
   "Luxembourg": { name: "Luxemburgo", code: "LU" },
-  "Liechtenstein": { name: "Liechtenstein", code: "LI" },
+  " Liechtenstein": { name: "Liechtenstein", code: "LI" },
   "Monaco": { name: "Mônaco", code: "MC" },
   "San Marino": { name: "San Marino", code: "SM" },
   "Vatican City": { name: "Vaticano", code: "VA" },
@@ -310,87 +566,96 @@ export default {
     return {
       youtubeUrl: "https://www.youtube.com/embed/4Q46xYqUwZQ",
       logoSrc: logo2,
-      defaultAvatar: "https://via.placeholder.com/40",
       userCity: "",
       userCountry: "",
-      selectedCity: "",
-      selectedCountry: "",
-      country: "", // Adicionado para evitar erro de referência
       isAdmin: false,
-      isInOwnCity: true,
       posts: [],
-      countries: [],
       weather: { temp: "--", desc: "Carregando..." },
-      cityError: null,
       isLoading: true,
-      showLocationModal: false,
-      modalCountry: "",
-      modalRegion: "",
-      modalState: "",
-      modalCity: "",
+      locationError: '', // This is also related to the removed modal.
+
+      continents: [],
+      countries: [],
       regions: [],
-      states: [],
       cities: [],
-      filteredCountry: '',
-      filteredCity: '',
-  countryMap, // Adiciona countryMap no data
-  menuView: 'region', // 'home' ou 'region'
-  userEmail: '',
+
+      selectedContinentId: '',
+      selectedCountryId: '',
+      selectedRegionId: '',
+      selectedCityId: '',
+
+      sidebarStep: 'continent',
+
+      userEmail: '',
+      canPost: false,
+      userDefaultCityId: null, // Armazena a cidade padrão do usuário
+      expandedPosts: [], // Array para controlar quais posts estão expandidos
+      showCalendarModal: false,
+      currentMonth: new Date().getMonth(),
+      currentYear: new Date().getFullYear(),
+      selectedDate: null,
+      showMobileMenu: false, // Adicionado estado para controlar modal mobile
     };
   },
   computed: {
-    filteredPosts() {
-      if (this.menuView === 'home') {
-        // Home: mostra todos os posts
-        return this.posts.filter((p) => p.content || p.media_url);
+    locationText() {
+      if (this.selectedCityId) {
+        const city = this.cities.find(c => c.id === this.selectedCityId);
+        return city ? city.nome : 'Terra';
       }
-      if (this.filteredCountry) {
-        return this.posts.filter(
-          (p) => (p.content || p.media_url) &&
-            this.normalize(p.user?.country) === this.normalize(this.filteredCountry) &&
-            (!this.filteredCity || this.normalize(p.user?.city) === this.normalize(this.filteredCity))
-        );
+      if (this.selectedRegionId) {
+        const region = this.regions.find(r => r.id === this.selectedRegionId);
+        return region ? region.nome : 'Terra';
       }
-      // Região: posts da cidade do usuário
-      return this.posts.filter(
-        (p) => (p.content || p.media_url) &&
-          this.normalize(p.user?.city) === this.normalize(this.userCity) &&
-          this.normalize(p.user?.country) === this.normalize(this.userCountry)
-      );
-    },
-    countryText() {
-      if (this.menuView === 'home') {
-        return 'Terra';
+      if (this.selectedCountryId) {
+        const country = this.countries.find(c => c.id === this.selectedCountryId);
+        return country ? country.nome : 'Terra';
       }
-      if (this.filteredCountry) {
-        return `${this.filteredCity || ''}${this.filteredCity ? ', ' : ''}${this.filteredCountry}`;
+      if (this.selectedContinentId) {
+        const continent = this.continents.find(c => c.id === this.selectedContinentId);
+        return continent ? continent.nome : 'Terra';
       }
-      return `${this.userCity}${this.userCity ? ', ' : ''}${this.userCountry}`;
+      return 'Terra';
     },
-    isInOwnCityView() {
-  // Admin vê sempre, inclusive na home (Terra)
-  if (this.userEmail === 'admin@gmail.com') return true;
-  // Usuário comum: botão + só aparece se estiver na própria cidade/estado/país, e nunca na home (Terra) ou só país
-  // Se está na home (Terra), não mostra
-  if (this.menuView === 'home') return false;
-  // Se está filtrando só país (sem cidade), não mostra
-  if (this.filteredCountry && !this.filteredCity) return false;
-  // Usuário comum: só se está na própria cidade e país
-  const cityOk = this.normalize(this.userCity) === this.normalize(this.filteredCity || this.userCity);
-  const countryOk = this.normalize(this.userCountry) === this.normalize(this.filteredCountry || this.userCountry);
-  return cityOk && countryOk;
+
+    currentMonthName() {
+      const months = [
+        'JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO',
+        'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'
+      ];
+      return months[this.currentMonth];
     },
-  },
-  watch: {
-    modalRegion(val) {
-      this.loadStates(val);
-      this.modalState = "";
-      this.modalCity = "";
-      this.cities = [];
-    },
-    modalState(val) {
-      this.loadCities(val);
-      this.modalCity = "";
+
+    calendarDays() {
+      const firstDay = new Date(this.currentYear, this.currentMonth, 1);
+      const lastDay = new Date(this.currentYear, this.currentMonth + 1, 0);
+      const daysInMonth = lastDay.getDate();
+      const startingDayOfWeek = firstDay.getDay();
+
+      const days = [];
+
+      // Adiciona dias vazios antes do primeiro dia do mês
+      for (let i = 0; i < startingDayOfWeek; i++) {
+        days.push({ key: `empty-${i}`, day: null, isToday: false, isSelected: false });
+      }
+
+      // Adiciona os dias do mês
+      const today = new Date();
+      for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(this.currentYear, this.currentMonth, day);
+        const isToday = date.toDateString() === today.toDateString();
+        const isSelected = this.selectedDate && date.toDateString() === this.selectedDate.toDateString();
+
+        days.push({
+          key: `day-${day}`,
+          day,
+          date,
+          isToday,
+          isSelected
+        });
+      }
+
+      return days;
     }
   },
   methods: {
@@ -409,17 +674,19 @@ export default {
     async fetchTvLink() {
       // Busca link de vídeo para país/cidade selecionados
       let url = '';
-      if (this.filteredCountry && this.filteredCity) {
-        url = `/api/locations/tv_link?country=${this.filteredCountry}&city=${this.filteredCity}`;
-      } else if (this.filteredCountry) {
-        url = `/api/locations/tv_link?country=${this.filteredCountry}`;
+      if (this.selectedCityId) {
+        url = `/api/locations/tv_link?city_id=${this.selectedCityId}`;
+      } else if (this.selectedCountryId) {
+        url = `/api/locations/tv_link?country_id=${this.selectedCountryId}`;
+      } else if (this.selectedContinentId) {
+        url = `/api/locations/tv_link?continent_id=${this.selectedContinentId}`;
       } else {
         url = `/api/locations/tv_link?country=Brasil`;
       }
       try {
-    const res = await api.get(url);
-    this.youtubeUrl = this.convertToEmbed(res.data.url) || this.youtubeUrl;
-    console.log('TV ao vivo URL:', this.youtubeUrl);
+        const res = await api.get(url);
+        this.youtubeUrl = this.convertToEmbed(res.data.url) || this.youtubeUrl;
+        console.log('TV ao vivo URL:', this.youtubeUrl);
       } catch (e) {}
     },
     formatDate(d) {
@@ -429,90 +696,220 @@ export default {
     normalize(str) {
       return str?.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     },
+
+    async fetchContinents() {
+      try {
+        const res = await api.get('/continentes');
+        console.log('[v0] Continents response:', res.data);
+        this.continents = res.data.data || res.data || [];
+      } catch (e) {
+        console.error('Error fetching continents:', e);
+        this.continents = [];
+      }
+    },
+
+    async fetchCountries(continentId) {
+      try {
+        const res = await api.get(`/paises?continente_id=${continentId}`);
+        console.log('[v0] Countries response:', res.data);
+        this.countries = res.data.data || res.data || [];
+      } catch (e) {
+        console.error('Error fetching countries:', e);
+        this.countries = [];
+      }
+    },
+
+    async fetchRegions(countryId) {
+      try {
+        const res = await api.get(`/regioes?pais_id=${countryId}`);
+        console.log('[v0] Regions response:', res.data);
+        this.regions = res.data.data || res.data || [];
+      } catch (e) {
+        console.error('Error fetching regions:', e);
+        this.regions = [];
+      }
+    },
+
+    async fetchCities(regionId) {
+      try {
+        const res = await api.get(`/cidades?regiao_id=${regionId}`);
+        console.log('[v0] Cities response:', res.data);
+        this.cities = res.data.data || res.data || [];
+      } catch (e) {
+        console.error('Error fetching cities:', e);
+        this.cities = [];
+      }
+    },
+
+    async selectContinentSidebar(continentId) {
+      this.selectedContinentId = continentId;
+      this.selectedCountryId = '';
+      this.selectedRegionId = '';
+      this.selectedCityId = '';
+      this.countries = [];
+      this.regions = [];
+      this.cities = [];
+
+      await this.fetchCountries(continentId);
+      this.sidebarStep = 'country';
+      this.fetchPosts();
+      this.fetchTvLink();
+    },
+
+    async selectCountrySidebar(countryId) {
+      this.selectedCountryId = countryId;
+      this.selectedRegionId = '';
+      this.selectedCityId = '';
+      this.regions = [];
+      this.cities = [];
+
+      await this.fetchRegions(countryId);
+      this.sidebarStep = 'region';
+      this.fetchPosts();
+      this.fetchTvLink();
+    },
+
+    async selectRegionSidebar(regionId) {
+      this.selectedRegionId = regionId;
+      this.selectedCityId = '';
+      this.cities = [];
+
+      await this.fetchCities(regionId);
+      this.sidebarStep = 'city';
+      this.fetchPosts();
+      this.fetchWeather();
+      this.fetchTvLink();
+    },
+
+    selectCitySidebar(cityId) {
+      this.selectedCityId = cityId;
+      localStorage.setItem('selectedRegionId', cityId);
+      this.fetchPosts();
+      this.fetchWeather();
+      this.fetchTvLink();
+    },
+
+    sidebarGoBackToContinent() {
+      this.sidebarStep = 'continent';
+      this.selectedCountryId = '';
+      this.selectedRegionId = '';
+      this.selectedCityId = '';
+      this.countries = [];
+      this.regions = [];
+      this.cities = [];
+      this.fetchPosts();
+    },
+
+    sidebarGoBackToCountry() {
+      this.sidebarStep = 'country';
+      this.selectedRegionId = '';
+      this.selectedCityId = '';
+      this.regions = [];
+      this.cities = [];
+      this.fetchPosts();
+    },
+
+    sidebarGoBackToRegion() {
+      this.sidebarStep = 'region';
+      this.selectedCityId = '';
+      this.cities = [];
+      this.fetchPosts();
+    },
+
     async fetchUser() {
       try {
-        this.fetchCountries();
         const token = localStorage.getItem("token");
+        console.log('[v0] Token encontrado:', token ? 'Sim' : 'Não');
+
         if (!token) {
           this.isLoading = false;
+          this.$router.push('/login');
           return;
         }
-        const res = await api.get("/api/user", {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+
+        const res = await api.get("/user");
+        console.log('[v0] Dados do usuário:', res.data);
+
         if (res.data) {
-          this.userCity = res.data.city || "";
-          this.userCountry = res.data.country || "";
-          this.filteredCity = this.userCity;
-          this.filteredCountry = this.userCountry;
-          this.fetchTvLink();
-          this.selectedCity = this.userCity;
-          this.selectedCountry = this.userCountry;
-          // Corrige: admin se isAdmin ou is_admin for 1 ou true
           this.userEmail = res.data.email || '';
           this.isAdmin = this.userEmail === 'admin@gmail.com';
-          const normalizedUserCity = this.normalize(this.userCity);
-          const normalizedSelectedCity = this.normalize(this.selectedCity);
-          this.isInOwnCity = normalizedUserCity === normalizedSelectedCity;
-          // Se admin, vai direto para Home e não mostra modal
-          if (this.isAdmin) {
-            this.menuView = 'home';
-            this.showLocationModal = false;
-            this.filteredCountry = '';
-            this.filteredCity = '';
+          this.canPost = true;
+
+          if (res.data.pais_regiao_cidade_id) {
+            this.userDefaultCityId = res.data.pais_regiao_cidade_id;
+
+            // Verifica se há uma cidade selecionada no localStorage
+            const storedCityId = localStorage.getItem('selectedRegionId');
+            if (storedCityId) {
+              this.selectedCityId = parseInt(storedCityId);
+            } else {
+              this.selectedCityId = this.userDefaultCityId;
+              localStorage.setItem('selectedRegionId', this.userDefaultCityId);
+            }
+
+            // Fetch related location data to populate sidebar correctly
+            try {
+              const cityResponse = await api.get(`/cidades/${this.selectedCityId}`);
+              const city = cityResponse.data;
+              this.cities = [city];
+
+              const regionResponse = await api.get(`/regioes/${city.regiao_id}`);
+              const region = regionResponse.data;
+              this.regions = [region];
+              this.selectedRegionId = region.id;
+
+              const countryResponse = await api.get(`/paises/${region.pais_id}`);
+              const country = countryResponse.data;
+              this.countries = [country];
+              this.selectedCountryId = country.id;
+
+              const continentResponse = await api.get(`/continentes/${country.continente_id}`);
+              const continent = continentResponse.data;
+              this.continents = [continent];
+              this.selectedContinentId = continent.id;
+
+              this.sidebarStep = 'city';
+            } catch (e) {
+              console.error('[v0] Erro ao buscar dados de localização:', e);
+            }
+          } else if (this.isAdmin) {
+            this.selectedContinentId = '';
+            this.selectedCountryId = '';
+            this.selectedRegionId = '';
+            this.selectedCityId = '';
+            this.sidebarStep = 'continent';
           }
         }
         this.isLoading = false;
-        if (this.isAdmin) {
-          this.fetchPosts();
-        } else if (this.userCity) {
-          this.fetchUserCityPosts();
-          this.fetchWeather();
-        } else {
-          this.fetchPosts();
-        }
       } catch (e) {
+        console.error('[v0] Erro ao buscar usuário:', e);
         this.isLoading = false;
-        this.fetchPosts();
+
+        if (e.response && (e.response.status === 401 || e.response.status === 403)) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('userId');
+          this.$router.push('/login');
+        }
       }
     },
-    fetchCountries() {
-      // Países fixos para o modal do login
-      this.countries = [
-        'Brasil', 'Estados Unidos', 'Argentina', 'Canadá', 'França', 'Alemanha', 'Japão', 'Portugal', 'Espanha'
-      ];
-    },
-    async loadRegions() {
-      const res = await api.get('/api/admin/locations?level=region&parent=Brasil');
-      this.regions = res.data.map(r => r.name);
-    },
-    async loadStates() {
-  const res = await api.get('/api/estados');
-  // Mantém apenas as siglas dos estados
-  this.states = res.data;
-    },
-    async loadCities(state) {
-  if (!state) { this.cities = []; return; }
-  // Corrige: usa query string para compatibilidade com backend
-  const res = await api.get(`/api/cidades/${state}`);
-  this.cities = res.data.map(c => this.normalizeName(c));
-    },
-    normalizeName(str) {
-      if (!str) return '';
-      // Remove caracteres estranhos e normaliza encoding
-      return str
-        .replace(/[\uFFFD\?]+/g, '') // Remove pontos de interrogação e caracteres inválidos
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-    },
+
     async fetchPosts() {
       try {
-        const res = await api.get("/api/posts", {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
-        });
-        // Garante que posts seja sempre array
+        this.isLoading = true;
+        let apiUrl = '/posts';
+        if (this.selectedCityId) {
+          apiUrl = `/posts?cidade_id=${this.selectedCityId}`;
+        } else if (this.selectedRegionId) {
+          apiUrl = `/posts?regiao_id=${this.selectedRegionId}`;
+        } else if (this.selectedCountryId) {
+          apiUrl = `/posts?pais_id=${this.selectedCountryId}`;
+        } else if (this.selectedContinentId) {
+          apiUrl = `/posts?continente_id=${this.selectedContinentId}`;
+        }
+
+        const res = await api.get(apiUrl);
+        console.log('[v0] Posts response:', res.data);
+
         if (Array.isArray(res.data)) {
           this.posts = res.data;
         } else if (res.data && Array.isArray(res.data.data)) {
@@ -521,304 +918,326 @@ export default {
           this.posts = [];
         }
       } catch (e) {
+        console.error('Error fetching posts:', e);
         this.posts = [];
+      } finally {
+        this.isLoading = false;
       }
     },
-    async fetchUserCityPosts() {
+
+    async fetchWeather() {
+      // Weather API implementation
       try {
-        const res = await api.get("/api/user/city-posts", {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
-        });
-        // Garante que posts seja sempre array
-        if (Array.isArray(res.data)) {
-          this.posts = res.data;
-        } else if (res.data && Array.isArray(res.data.data)) {
-          this.posts = res.data.data;
-        } else {
-          this.posts = [];
+        const apiKey = "0c80d5976ca76722ed51673286e90cbe";
+        let cityForWeather = 'São Paulo'; // Default city if no location is selected
+        let countryForWeather = 'Brazil';
+
+        if (this.selectedCityId) {
+          const city = this.cities.find(c => c.id === this.selectedCityId);
+          const country = this.countries.find(c => c.id === this.selectedCountryId);
+
+          if (city) cityForWeather = city.nome;
+          if (country) countryForWeather = country.nome;
+        } else if (this.userCity) {
+          // Fallback to user's city if no region is selected
+          cityForWeather = this.userCity;
+          countryForWeather = this.userCountry;
         }
+
+        const res = await api.get(`https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(cityForWeather)},${encodeURIComponent(countryForWeather)}&appid=${apiKey}&units=metric&lang=pt`);
+
+        this.weather.temp = res.data.main && res.data.main.temp ? Math.round(res.data.main.temp) : '--';
+        this.weather.desc = res.data.weather && res.data.weather[0] && res.data.weather[0].description ? res.data.weather[0].description : 'Indisponível';
       } catch (e) {
-        this.fetchPosts();
+        console.error('Error fetching weather:', e);
+        this.weather = { temp: "--", desc: "Indisponível" };
       }
     },
-      openCountryModal(country) {
-        this.modalCountry = country;
-        this.modalCity = '';
-        this.modalState = '';
-        this.modalRegion = '';
-        this.states = [];
-        this.cities = [];
-        this.locationError = '';
-    // Mostra todos os países da barra lateral ao abrir pelo sidebar
-    this.countries = Object.values(countryMap).map(c => c.name);
-        if (country === 'Brasil') {
-          this.loadStates();
-        }
-        this.showLocationModal = true;
-      },
-      async confirmLocation() {
-        this.locationError = '';
-        if (!this.modalCountry || !this.modalCity) {
-          this.locationError = 'Selecione o país e digite a cidade.';
-          return;
-        }
-        // Valida cidade via API clima
-        try {
-          await this.fetchWeather(true); // true = modo validação
-        } catch (e) {
-          this.locationError = 'Cidade não encontrada ou inválida.';
-          return;
-        }
-        // Se admin, nunca registra país/cidade no banco
-        if (this.userEmail !== 'admin@gmail.com') {
-          if (!this.userCity && !this.userCountry) {
-            this.userCountry = this.modalCountry;
-            this.userCity = this.modalCity;
-            this.selectedCountry = this.modalCountry;
-            this.selectedCity = this.modalCity;
-            api.post("/api/user/location", {
-              country: this.modalCountry,
-              region: this.modalRegion,
-              state: this.modalState,
-              city: this.modalCity
-            }, {
-              headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
-            });
-          }
-        }
-        // Só filtra posts, não altera cadastro do usuário
-        this.filteredCountry = this.modalCountry;
-        this.filteredCity = this.modalCity;
-        this.showLocationModal = false;
-        this.fetchWeather();
-        this.fetchUserCityPosts();
-      },
-      async fetchWeather(validateOnly = false) {
-  let city = '';
-  let country = '';
-  if (validateOnly) {
-    city = this.modalCity;
-    country = this.modalCountry;
-  } else if (this.filteredCity) {
-    city = this.filteredCity;
-    country = this.filteredCountry;
-  } else if (this.userCity) {
-    city = this.userCity;
-    country = this.userCountry;
-  }
-  if (!city || !country) return;
-  try {
-    const apiKey = "0c80d5976ca76722ed51673286e90cbe";
-    // Usa nome do país, não código
-    const res = await api.get(`https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)},${encodeURIComponent(country)}&appid=${apiKey}&units=metric&lang=pt`);
-    if (validateOnly) return true;
-    this.weather.temp = res.data.main && res.data.main.temp ? Math.round(res.data.main.temp) : '--';
-    this.weather.desc = res.data.weather && res.data.weather[0] && res.data.weather[0].description ? res.data.weather[0].description : 'Indisponível';
-    if (this.weather.temp === '--' || this.weather.desc === 'Indisponível') {
-      this.cityError = "Cidade não encontrada ou não existe. Tente novamente.";
-      this.showLocationModal = true;
-    }
-  } catch (e) {
-    if (validateOnly) {
-      this.locationError = "Cidade não encontrada ou não existe. Tente novamente.";
-      this.showLocationModal = true;
-      throw new Error('Cidade não encontrada ou não existe. Tente novamente.');
-    }
-    this.weather = { temp: "--", desc: "Indisponível" };
-    this.cityError = "Cidade não encontrada ou não existe. Tente novamente.";
-    this.showLocationModal = true;
-    alert("Cidade não encontrada ou clima indisponível. Tente novamente.");
-  }
-},
-    selectCountry(country) {
-      this.selectedCountry = country;
-      this.modalCountry = country;
-  // Remove modalRegion pois não é mais usado
-  this.modalRegion = '';
-      this.modalState = '';
-      this.modalCity = '';
-      this.regions = [];
-      this.states = [];
-      this.cities = [];
-      if (country === 'Brasil') {
-        this.loadStates();
-      }
-    },
+
     openCreate() {
-      if (!this.isAdmin && !this.isInOwnCity) {
-        alert(`Você só pode postar na sua cidade (${this.userCity})`);
-        return;
-      }
       alert("Abrir modal de criação de post.");
     },
-    nav(page) {
+
+    async nav(page) {
       if (page === 'home') {
-        this.menuView = 'home';
-        this.filteredCountry = '';
-        this.filteredCity = '';
-        // Se admin, mostra todos os posts
-        if (this.isAdmin) {
-          this.fetchPosts();
-        }
+        this.sidebarStep = 'continent';
+        this.selectedContinentId = '';
+        this.selectedCountryId = '';
+        this.selectedRegionId = '';
+        this.selectedCityId = '';
+        localStorage.removeItem('selectedRegionId');
+        this.fetchPosts();
+        this.fetchTvLink();
       } else if (page === 'region') {
-        this.menuView = 'region';
-        this.filteredCountry = '';
-        this.filteredCity = '';
-        // Se admin, mostra todos os posts
-        if (this.isAdmin) {
+        // If no city is selected, try to use user's default location
+        if (this.userEmail && !this.isAdmin && !this.selectedCityId) {
+          await this.fetchUser(); // Re-fetch user to ensure location data is loaded
+          if (this.selectedCityId) {
+            this.fetchPosts();
+            this.fetchTvLink();
+          } else {
+            alert("Por favor, selecione sua localização.");
+          }
+        } else {
           this.fetchPosts();
+          this.fetchTvLink();
         }
-      } else if (page === 'admin') {
-        this.goToAdminDashboard();
       } else {
         alert("Navegar para " + page);
       }
     },
 
-    // Removido goToAdminDashboard pois agora navegação é por emit
-    openCountryModal(country) {
-      this.modalCountry = country;
-      this.modalCity = '';
-      this.showLocationModal = true;
-      this.states = [];
-      this.cities = [];
-      if (country === 'Brasil') {
-        this.loadStates();
+    getCityName() {
+      if (this.selectedCityId) {
+        const city = this.cities.find(c => c.id === this.selectedCityId);
+        return city ? city.nome : 'Cidade desconhecida';
       }
+      return '';
     },
-    filterPostsByCountry(country) {
-      this.countries = Object.values(countryMap).map(c => c.name);
-      // Se admin, nunca mostra modal nem altera cadastro
-      if (this.isAdmin) {
-        this.filteredCountry = country;
-        this.filteredCity = '';
-        this.showLocationModal = false;
-        this.fetchPosts();
-        return;
+
+    resetToUserCity() {
+      localStorage.removeItem('selectedRegionId');
+      this.selectedCityId = this.userDefaultCityId || '';
+
+      if (this.userDefaultCityId) {
+        localStorage.setItem('selectedRegionId', this.userDefaultCityId);
       }
-      this.showLocationModal = true;
-      this.filteredCountry = country;
-      this.filteredCity = '';
+
+      this.fetchPosts();
+      this.fetchWeather();
       this.fetchTvLink();
-      if (country === 'Brasil') {
-        this.showLocationModal = true;
+    },
+
+    getPostPreview(text) {
+      if (!text) return '';
+      const maxLength = 150;
+      if (text.length <= maxLength) return text;
+      return text.substring(0, maxLength) + '...';
+    },
+
+    shouldShowReadMore(text) {
+      if (!text) return false;
+      return text.length > 150;
+    },
+
+    isPostExpanded(postId) {
+      return this.expandedPosts.includes(postId);
+    },
+
+    togglePostExpansion(postId) {
+      const index = this.expandedPosts.indexOf(postId);
+      if (index > -1) {
+        this.expandedPosts.splice(index, 1);
       } else {
-        this.showLocationModal = true;
+        this.expandedPosts.push(postId);
       }
     },
-    confirmLocation() {
-      // Se o usuário ainda não tem local cadastrado, salva no banco
-      if (!this.userCity && !this.userCountry) {
-        this.userCountry = this.modalCountry;
-        this.userCity = this.modalCity;
-        this.selectedCountry = this.modalCountry;
-        this.selectedCity = this.modalCity;
-        api.post("/api/user/location", {
-          country: this.modalCountry,
-          region: this.modalRegion,
-          state: this.modalState,
-          city: this.modalCity
-        }, {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
-        });
-      }
-      // Só filtra posts, não altera cadastro do usuário
-  this.filteredCountry = this.modalCountry;
-  this.filteredCity = this.modalCity;
-  this.showLocationModal = false;
-  this.fetchWeather();
-  this.fetchUserCityPosts();
-  this.fetchTvLink();
+
+    openCalendarModal() {
+      this.showCalendarModal = true;
     },
-    // ...existing code...
-  },
-  mounted() {
-  this.fetchUser();
-  this.fetchCountries();
-  this.fetchTvLink();
-  },
-  created() {
-  // Exibe modal só se usuário não tem localização e não é admin
-  const token = localStorage.getItem('token');
-  if (token) {
-  api.get('/api/user', { headers: { Authorization: `Bearer ${token}` } })
-    .then(res => {
-      const email = res.data.email || '';
-      if (email !== 'admin@gmail.com' && !res.data.city && !res.data.country) {
-        this.showLocationModal = true;
+
+    closeCalendarModal() {
+      this.showCalendarModal = false;
+    },
+
+    previousMonth() {
+      if (this.currentMonth === 0) {
+        this.currentMonth = 11;
+        this.currentYear--;
+      } else {
+        this.currentMonth--;
       }
-    })
-    .catch(() => {});
-} else {
-  this.showLocationModal = true;
+    },
+
+    nextMonth() {
+      if (this.currentMonth === 11) {
+        this.currentMonth = 0;
+        this.currentYear++;
+      } else {
+        this.currentMonth++;
+      }
+    },
+
+    selectDay(day) {
+      if (day.day) {
+        this.selectedDate = day.date;
+      }
+    },
+
+    toggleMobileMenu() {
+      this.showMobileMenu = !this.showMobileMenu;
+    },
+
+    closeMobileMenu() {
+      this.showMobileMenu = false;
+    },
+  },
+
+  async mounted() {
+    console.log('[v0] Dashboard montado');
+    await this.fetchContinents();
+    await this.fetchUser();
+
+    this.fetchPosts();
+    this.fetchWeather();
+    this.fetchTvLink();
   }
- }
-}
+};
 </script>
 
 <style scoped>
+/* Reduzindo altura do calendário e ajustando espaçamento dos posts */
+/* Calendário fixo no topo com estilo azul - altura reduzida */
+.calendar-fixed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 320px; /* Espaço para sidebar */
+  background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  padding: 16px 20px; /* Reduzido de 20px para 16px */
+}
+
+.calendar-container {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.calendar-month {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.calendar-nav-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 1.8rem;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.calendar-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+.calendar-month-text {
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: #fff;
+  letter-spacing: 1px;
+}
+
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.calendar-weekday {
+  text-align: center;
+  font-weight: bold;
+  color: #fff;
+  font-size: 0.85rem; /* Reduzido de 0.9rem */
+  padding: 6px 0; /* Reduzido de 8px */
+}
+
+.calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px; /* Reduzido de 6px */
+}
+
+.calendar-day {
+  height: 40px; /* Altura fixa reduzida de ~60px para 40px */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 0.95rem; /* Reduzido de 1rem */
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: 500;
+}
+
+.calendar-day:hover:not(.calendar-day-empty) {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+.calendar-day-empty {
+  cursor: default;
+  background: transparent;
+}
+
+.calendar-day-today {
+  background: #f44336;
+  color: #fff;
+  font-weight: bold;
+  box-shadow: 0 2px 8px rgba(244, 67, 54, 0.4);
+}
+
+.calendar-day-selected {
+  background: #fff;
+  color: #2196f3;
+  font-weight: bold;
+  box-shadow: 0 2px 8px rgba(255, 255, 255, 0.4);
+}
+
+/* Removendo scroll separado e tornando layout fluido como Instagram */
 .layout {
   display: flex;
   flex-direction: row;
-  height: 100vh;
-  background: #2196f3;
+  min-height: 100vh;
+  background: #f5f5f5;
+  position: relative;
 }
+
+/* Área de conteúdo agora começa após o calendário com altura reduzida (~220px) */
 .content-area {
   flex: 1;
   background: #ffffff;
   padding: 0;
+  margin-top: 220px; /* Reduzido de 280px para 220px */
+  margin-right: 320px; /* Espaço para sidebar */
 }
+
 .hero {
   background: #2196f3;
   padding: 0;
   position: relative;
 }
-.tv-header {
-  background: #000;
-  color: #fff;
-  padding: 0;
-  text-align: center;
-}
-.tv-title {
-  font-size: 2.2rem;
-  font-weight: bold;
-  padding: 16px 0 0 0;
-}
-.tv-video {
-  position: relative;
-  width: 100%;
-  height: 180px;
-  background: #222;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.tv-img {
-  width: 100%;
-  height: 180px;
-  object-fit: cover;
-}
-.tv-play {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 3rem;
-  color: #fff;
-  opacity: 0.8;
-}
+
 .tv-post {
   background: #000;
   color: #fff;
-  padding: 8px 0 16px 0;
+  padding: 16px 0;
+  text-align: center;
 }
+
 .tv-post-title {
   font-size: 1.3rem;
   font-weight: bold;
 }
+
 .tv-post-desc {
   font-size: 1rem;
 }
+
 .city-country {
   background: #2196f3;
   color: #fff;
@@ -827,6 +1246,7 @@ export default {
   font-weight: bold;
   padding: 90px 0 0 0;
 }
+
 .city-country-text {
   font-size: 1.5rem;
   color: #222;
@@ -836,13 +1256,15 @@ export default {
   position: relative;
   top: -50px;
 }
+
 .logo-central {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  bottom: -60px; /* ou outro valor para descer só a logo */
+  bottom: -60px;
   z-index: 2;
 }
+
 .logo-img {
   width: 90px;
   height: 90px;
@@ -851,358 +1273,485 @@ export default {
   border: 4px solid #222;
   object-fit: cover;
 }
+
+/* Posts agora têm margem superior adequada e não passam por trás do calendário */
 .posts-list {
   background: #fff;
-  padding: 0 12px;
+  padding: 80px 16px 80px 16px; /* Aumentado padding-top de 20px para 80px */
   position: relative;
+  min-height: calc(100vh - 220px); /* Ajustado de 280px para 220px */
 }
+
+.loading, .no-posts {
+  text-align: center;
+  padding: 60px 20px;
+  color: #666;
+  font-size: 1.1rem;
+}
+
+/* Melhorando card do post com espaçamento e borda visível */
 .post-item {
   background: #fff;
-  border-radius: 8px;
-  margin: 12px 0;
-  padding: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-  color: #000000;
+  border-radius: 12px;
+  margin: 20px auto;
+  padding: 0;
+  max-width: 600px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12); /* Sombra mais visível */
+  border: 1px solid #e0e0e0;
+  overflow: hidden;
 }
-.post-user, .post-date, .post-content {
+
+.post-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.post-user {
+  font-weight: 600;
   color: #222;
+  font-size: 0.95rem;
 }
+
+.post-date {
+  color: #999;
+  font-size: 0.85rem;
+}
+
+/* Imagem do post sem padding para layout mais limpo */
+.post-media {
+  width: 100%;
+  background: #000;
+  line-height: 0;
+}
+
+/* Imagem do post com altura máxima para evitar quebra de layout */
+.post-media img {
+  width: 100%;
+  max-height: 500px; /* Reduzido de 600px para 500px */
+  object-fit: cover;
+  display: block;
+}
+
+/* Conteúdo do post com padding adequado */
+.post-content {
+  padding: 12px 16px;
+  color: #333;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  white-space: pre-wrap; /* Preserva quebras de linha */
+  word-wrap: break-word; /* Quebra palavras longas */
+}
+
+/* Botão "Ver mais" */
+.read-more-btn {
+  background: none;
+  border: none;
+  color: #2196f3;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 4px 0;
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+.read-more-btn:hover {
+  text-decoration: underline;
+}
+
+/* Ações do post com melhor espaçamento */
+.post-actions {
+  padding: 8px 16px;
+  border-top: 1px solid #f0f0f0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.post-likes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.like-icon {
+  font-size: 1.2rem;
+}
+
+.like-count {
+  color: #666;
+  font-weight: 500;
+}
+
+/* Comentários com melhor layout */
+.post-comments {
+  padding: 12px 16px;
+  background: #fafafa;
+}
+
+.comments-title {
+  font-weight: 600;
+  color: #666;
+  font-size: 0.9rem;
+  margin-bottom: 12px;
+}
+
+.comment-item {
+  margin-bottom: 12px;
+  padding: 8px 0;
+}
+
+.comment-user {
+  font-weight: 600;
+  color: #222;
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+}
+
+.comment-body {
+  color: #444;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+
+/* Menu lateral fixo à direita */
 .right-sidebar {
-  width: 180px;
+  width: 320px;
   background: #2196f3;
   color: #fff;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  padding: 0;
- /* height: 1000px;*/
- margin-left: 10px;
+  height: 100vh;
+  overflow: hidden;
+  border-left: 2px solid #1976d2;
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 50;
 }
+
 .weather {
-  background: #2196f3;
+  background: #1976d2;
   color: #fff;
   text-align: center;
-  padding: 16px 0 8px 0;
+  padding: 20px;
+  border-bottom: 2px solid #1565c0;
 }
+
 .weather-icon {
-  font-size: 2.2rem;
+  font-size: 2.5rem;
+  margin-bottom: 8px;
 }
+
 .weather-temp {
-  font-size: 1.5rem;
+  font-size: 1.8rem;
   font-weight: bold;
+  margin-bottom: 4px;
 }
+
 .weather-desc {
   font-size: 1rem;
+  text-transform: capitalize;
 }
-.country-list-scroll {
-  /*max-height: 340px;*/
-  overflow-y: auto;
+
+/* Área de menu com scroll interno */
+.location-menu {
+  flex: 1;
+  overflow-y: auto; /* Permite scroll vertical */
+  padding: 16px 12px;
+  max-height: calc(100vh - 150px); /* Altura máxima menos o espaço do weather */
 }
-.country-list {
+
+.menu-section {
+  margin-bottom: 20px;
+}
+
+.menu-title {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #fff;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  text-align: center;
+}
+
+/* Alterado grid para coluna única e estilo azul com fundo preto */
+.checkbox-grid-sidebar {
+  display: grid;
+  grid-template-columns: 1fr; /* Coluna única */
+  gap: 8px;
+}
+
+.checkbox-item-sidebar {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  /* Invertendo cores: fundo azul e texto preto */
+  background: #2196f3; /* Fundo azul */
+  color: #000; /* Texto preto */
+  border: 2px solid #1976d2; /* Borda azul escuro */
+  border-radius: 6px;
+  padding: 12px 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.95rem;
 }
-.country-btn {
-  background: #2196f3;
-  color: #222;
-  border: 2px solid #222;
-  border-radius: 10px;
-  padding: 12px 0;
-  font-size: 1.1rem;
+
+.checkbox-item-sidebar:hover {
+  background: #42a5f5; /* Azul mais claro no hover */
+  border-color: #1565c0;
+  transform: scale(1.02);
+}
+
+.checkbox-item-sidebar input[type="checkbox"] {
+  margin-right: 8px;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #000; /* Checkbox preto */
+}
+
+.checkbox-label-sidebar {
+  flex: 1;
+  font-weight: 600;
+  cursor: pointer;
+  color: #000; /* Texto preto */
+}
+
+.back-btn-sidebar {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border: 2px solid #fff;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 0.95rem;
   font-weight: bold;
   cursor: pointer;
-  margin: 0 0 2px 0;
-  transition: background 0.2s;
+  margin-bottom: 12px;
+  width: 100%;
+  transition: all 0.2s;
 }
-.country-btn:hover {
-  background: #2196f3;
+
+.back-btn-sidebar:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
-.central-floating-btn {
-  position: absolute;
-  right: 24px;
-  bottom: -200px;
+
+/* Botão flutuante para abrir menu em mobile (oculto em desktop) */
+.mobile-menu-btn {
+  display: none;
+  position: fixed;
+  top: 16px;
+  right: 16px;
   background: #2196f3;
   color: #fff;
   border: none;
-  border-radius: 12px;
-  width: 10px;
-  height: 52px;
+  border-radius: 8px;
+  width: 48px;
+  height: 48px;
+  font-size: 1.8rem;
+  cursor: pointer;
+  z-index: 101;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  transition: all 0.2s;
+}
+
+.mobile-menu-btn:hover {
+  background: #1976d2;
+  transform: scale(1.05);
+}
+
+/* Modal de menu para mobile */
+.mobile-menu-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 1001;
+}
+
+.mobile-menu-modal {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 80%;
+  max-width: 320px;
+  height: 100vh;
+  background: #2196f3;
+  box-shadow: -4px 0 16px rgba(0,0,0,0.3);
+  overflow-y: auto;
+}
+
+.mobile-menu-header {
+  background: #1976d2;
+  color: #fff;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid #1565c0;
+}
+
+.mobile-menu-header h3 {
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+.mobile-menu-close {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.8rem;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 2.2rem;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  cursor: pointer;
-  z-index: 10;
 }
-.plus-sign {
-  font-size: 2.4rem;
-  color: #fff;
-  position: absolute;
-  left: 50%;
-  top: 43%;
-  transform: translate(-50%, -50%);
+
+.mobile-menu-body {
+  padding: 16px;
 }
+
+/* Barra de navegação inferior com z-index alto e botão "+" estilizado */
 .bottom-nav {
   position: fixed;
   left: 0;
   bottom: 0;
   width: 100vw;
-  background: #2196f3;
+  background: #fff;
   display: flex;
   justify-content: space-around;
   align-items: center;
-  padding: 8px 0;
-  z-index: 9;
+  padding: 12px 0;
+  z-index: 200; /* Z-index alto para ficar acima do menu lateral */
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.1);
+  border-top: 2px solid #e0e0e0;
 }
+
 .bottom-nav button {
   background: #2196f3;
   color: #fff;
   border: none;
   border-radius: 8px;
-  padding: 10px 18px;
-  font-size: 1.1rem;
+  padding: 10px 20px;
+  font-size: 1rem;
   font-weight: bold;
   cursor: pointer;
   margin: 0 4px;
+  transition: background 0.2s;
 }
+
 .bottom-nav button:hover {
-  background: #2196f3;
+  background: #1976d2;
 }
-.location-modal {
-  position: fixed;
-  left: 0;
-  top: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0,0,0,0.45);
+
+/* Botão "+" estilizado entre Home e Região */
+.add-post-btn {
+  background: #f44336 !important;
+  border-radius: 50% !important;
+  width: 56px !important;
+  height: 56px !important;
+  font-size: 2rem !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4) !important;
+}
+
+.add-post-btn:hover {
+  background: #d32f2f !important;
+  transform: scale(1.05);
+}
+
+/* Banner informativo mais fluido */
+.city-info-banner {
+  background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+  color: white;
+  padding: 16px 20px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-.location-modal form {
-  background: #fff;
-  border-radius: 12px;
-  padding: 32px 24px;
-  min-width: 320px;
-  box-shadow: 0 2px 16px rgba(0,0,0,0.18);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.location-selects {
-  width: 100%;
-  margin-bottom: 18px;
-  display: flex;
-  flex-direction: column;
+  justify-content: space-between;
   gap: 12px;
-}
-.location-selects select,
-.location-selects input {
-  width: 100%;
-  padding: 10px;
-  border-radius: 6px;
-  border: 1px solid #2196f3;
-  font-size: 1rem;
-}
-.location-confirm-btn {
-  background: #2196f3;
-  color: #fff;
-  border: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  margin-bottom: 20px;
   border-radius: 8px;
-  padding: 12px 24px;
-  font-size: 1.1rem;
-  font-weight: bold;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.city-info-text {
+  flex: 1;
+  font-size: 0.95rem;
+  word-wrap: break-word;
+  min-width: 200px;
+}
+
+.city-info-btn {
+  background: white;
+  color: #2196f3;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
   cursor: pointer;
-  margin-top: 8px;
-}
-.location-confirm-btn:hover {
-  background: #1565c0;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  white-space: nowrap;
 }
 
+.city-info-btn:hover {
+  background: #f5f5f5;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
 
-/* === Responsividade para celular (até 768px) === */
-/* === Layout móvel organizado === */
+/* Responsivo com layout fluido */
 @media (max-width: 768px) {
   .layout {
-              display: flex !important;
-              flex-direction: row !important;
-              width: 100vw !important;
-              min-width: 0 !important;
-              padding: 0 !important;
-              position: relative !important;
-            }
-            .content-area {
-              width: 70vw !important;
-              min-width: 0 !important;
-              padding: 0 !important;
-              align-items: flex-start !important;
-              display: flex !important;
-              flex-direction: column !important;
-              position: relative !important;
-            }
-            .hero {
-              display: flex !important;
-              flex-direction: column !important;
-              align-items: stretch !important;
-              padding: 0 !important;
-              gap: 0 !important;
-            }
-            .weather-box {
-              width: 100vw !important;
-              background: #2196f3 !important;
-              color: #fff !important;
-              text-align: center !important;
-              padding: 12px 0 8px 0 !important;
-              font-size: 1.1rem !important;
-              border-radius: 0 !important;
-              margin-bottom: 0 !important;
-            }
-            .tv-header {
-              display: flex !important;
-              flex-direction: column !important;
-              align-items: center !important;
-              gap: 8px !important;
-              width: 100vw !important;
-              margin: 0 !important;
-            }
-            .tv-title {
-              font-size: 1.3rem !important;
-              text-align: center !important;
-              margin-bottom: 4px !important;
-            }
-            .tv-video {
-              width: 100vw !important;
-              height: auto !important;
-              min-width: 0 !important;
-              margin-bottom: 0 !important;
-              border-radius: 0 !important;
-              overflow: hidden !important;
-            }
-            .tv-iframe {
-              width: 100vw !important;
-              height: 180px !important;
-              border-radius: 0 !important;
-            }
-            .tv-img {
-              width: 100vw !important;
-              height: auto !important;
-              border-radius: 0 !important;
-            }
-            .tv-play {
-              font-size: 2.2rem !important;
-              left: 50% !important;
-              top: 50% !important;
-              transform: translate(-50%, -50%) !important;
-            }
-            .city-country {
-              margin: 8px 0 0 0 !important;
-              text-align: center !important;
-              font-size: 1.2rem !important;
-              font-weight: bold !important;
-            }
-            .logo-central {
-              margin: 12px auto 0 auto !important;
-              text-align: center !important;
-              width: 100vw !important;
-              display: flex !important;
-              justify-content: center !important;
-            }
-            .logo-img {
-              width: 80px !important;
-              height: 80px !important;
-              margin: 0 auto !important;
-              display: block !important;
-              border-radius: 50% !important;
-              box-shadow: 0 2px 8px rgba(0,0,0,0.10) !important;
-            }
-            .side-bar {
-              position: fixed !important;
-              right: 0 !important;
-              top: 0 !important;
-              height: 100vh !important;
-              width: 30vw !important;
-              min-width: 120px !important;
-              max-width: 180px !important;
-              display: flex !important;
-              flex-direction: column !important;
-              overflow-y: auto !important;
-              gap: 4px !important;
-              background: #2196f3 !important;
-              padding: 4px 0 !important;
-              z-index: 100 !important;
-            }
-            .side-bar .side-btn {
-              width: 90% !important;
-              font-size: 1rem !important;
-              margin: 4px auto !important;
-              padding: 10px 0 !important;
-              border-radius: 8px !important;
-              background: #fff !important;
-              color: #2196f3 !important;
-              border: 1px solid #2196f3 !important;
-              text-align: center !important;
-            }
-            .central-floating-btn {
-              position: static !important;
-              display: flex !important;
-              margin: 16px auto 0 auto !important;
-              left: 0 !important;
-              right: 0 !important;
-              bottom: auto !important;
-              background: #2196f3 !important;
-              color: #fff !important;
-              border: none !important;
-              border-radius: 50% !important;
-              width: 64px !important;
-              height: 64px !important;
-              align-items: center !important;
-              justify-content: center !important;
-              font-size: 2.2rem !important;
-              box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
-              cursor: pointer !important;
-              z-index: 10 !important;
-            }
-            .plus-sign {
-              font-size: 2.4rem !important;
-              color: #fff !important;
-              position: static !important;
-              left: auto !important;
-              top: auto !important;
-              transform: none !important;
-              margin: 0 auto !important;
-            }
-            .bottom-nav {
-              position: fixed !important;
-              bottom: 0 !important;
-              left: 0 !important;
-              width: 100vw !important;
-              display: flex !important;
-              justify-content: space-around !important;
-              background: #fff !important;
-              box-shadow: 0 -2px 8px rgba(0,0,0,0.08) !important;
-              z-index: 100 !important;
-              padding: 8px 0 !important;
-            }
-            .bottom-nav button {
-              flex: 1 1 0 !important;
-              margin: 0 2px !important;
-              font-size: 1rem !important;
-              padding: 10px 0 !important;
-            }
-            .location-modal form {
-              min-width: 90vw !important;
-              padding: 18px 8px !important;
-            }
-            .location-selects {
-              gap: 8px !important;
-            }
-            .location-confirm-btn {
-              width: 100% !important;
-              font-size: 1rem !important;
-              padding: 10px 0 !important;
-            }
-          }
+    flex-direction: column;
+  }
+
+  .calendar-fixed {
+    right: 0; /* Ocupa largura total em mobile */
+    padding: 12px 16px; /* Padding reduzido em mobile */
+  }
+
+  .content-area {
+    margin-right: 0;
+    margin-top: 200px; /* Ajustado para mobile */
+  }
+
+  .right-sidebar {
+    display: none;
+  }
+
+  .mobile-menu-btn {
+    display: flex;
+  }
+
+  .mobile-menu-overlay {
+    display: block;
+  }
+
+  .post-item {
+    margin: 16px 12px;
+    border-radius: 8px;
+  }
+
+  .city-info-banner {
+    margin: 0 12px 16px 12px;
+    border-radius: 8px;
+  }
+}
 </style>

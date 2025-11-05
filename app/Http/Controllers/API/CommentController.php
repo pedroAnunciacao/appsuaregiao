@@ -2,41 +2,56 @@
 
 namespace App\Http\Controllers\API;
 
-use App\Http\Controllers\Controller;
+use App\Services\CommentService;
 use Illuminate\Http\Request;
-use App\Models\Comment;
-use App\Models\Post;
+use App\Http\Controllers\Controller;
 
 class CommentController extends Controller
 {
-    // Listar comentários de um post
-    public function index(Post $post){
-        return $post->comments()->with('user')->latest()->get();
+    protected CommentService $service;
+
+    public function __construct(CommentService $service)
+    {
+        $this->service = $service;
     }
 
-    // Criar comentário em um post
-    public function store(Request $r, Post $post){
-        $r->validate(['body'=>'required|string']);
+    public function index()
+    {
+        $comments = $this->service->all();
+        return response()->json($comments);
+    }
 
-        $comment = $post->comments()->create([
-            'user_id'=>$r->user()->id,
-            'body'=>$r->body
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'post_id' => 'required|exists:posts,id',
+            // 'user_id' => 'required|integer',
+            'body' => 'required|string|max:1000',
         ]);
 
-        return response()->json($comment,201);
+        $comment = $this->service->store($data);
+        return response()->json($comment, 201);
     }
 
-    // Lista todos os comentários (admin)
-    public function all()
+    public function show(int $id)
     {
-        return response()->json(Comment::with('user', 'post')->latest()->get());
+        $comment = $this->service->show($id);
+        return response()->json($comment);
     }
 
-    // Remove um comentário (admin)
-    public function destroy($id)
+    public function update(Request $request, int $id)
     {
-        $comment = Comment::findOrFail($id);
-        $comment->delete();
-        return response()->json(['success' => true]);
+        $data = $request->validate([
+            'content' => 'required|string|max:1000',
+        ]);
+
+        $comment = $this->service->update($id, $data);
+        return response()->json($comment);
+    }
+
+    public function destroy(int $id)
+    {
+        $this->service->destroy($id);
+        return response()->json(['message' => 'Comentário removido com sucesso']);
     }
 }

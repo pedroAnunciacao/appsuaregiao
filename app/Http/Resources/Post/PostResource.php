@@ -2,8 +2,11 @@
 
 namespace App\Http\Resources\Post;
 
+
 use Illuminate\Http\Resources\Json\JsonResource;
 use App\Http\Resources\User\UserResource;
+use App\Http\Resources\Comments\CommentsResource;
+
 
 class PostResource extends JsonResource
 {
@@ -15,6 +18,8 @@ class PostResource extends JsonResource
             'media_path' => $this->media_path,
             'thumbnail_path' => $this->thumbnail_path,
             'user' => new UserResource($this->whenLoaded('user')),
+            'comments' => CommentsResource::collection($this->whenLoaded('comments')),
+            'likes_count' => $this->likes_count, // <--- contagem de likes
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

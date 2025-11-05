@@ -20,7 +20,7 @@ class PaisRegioCidadeController extends Controller
     {
         try {
             $regiaoId = $request->query('regiao_id');
-            $perPage = $request->query('per_page', 50);
+            $perPage = $request->query('per_page', 5000);
             
             $cidades = $this->service->index($regiaoId, $perPage);
             return PaisRegioCidadeResource::collection($cidades);

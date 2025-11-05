@@ -44,6 +44,7 @@ export default {
           password: this.password
         });
         localStorage.setItem('token', res.data.token);
+        localStorage.setItem('userId', res.data.user.id);
         this.$emit('login-success');
       } catch (err) {
         this.error = err.response?.data?.message || 'Credenciais inválidas';

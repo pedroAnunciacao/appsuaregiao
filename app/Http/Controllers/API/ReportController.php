@@ -3,20 +3,43 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Services\ReportService;
 use Illuminate\Http\Request;
-use App\Models\Post;
-use App\Models\Report;
+use App\Http\Resources\Reports\ReportResource;
 
 class ReportController extends Controller
 {
-    public function store(Request $r, Post $post){
-        $r->validate(['reason'=>'required|string']);
+    protected ReportService $service;
 
-        $report = $post->reports()->create([
-            'user_id'=>$r->user()->id,
-            'reason'=>$r->reason
-        ]);
-
-        return response()->json($report,201);
+    public function __construct(ReportService $service)
+    {
+        $this->service = $service;
     }
+
+    public function index(Request $request)
+    {
+        $reports = $this->service->all($request->query('filter'));
+        return view('reports.index', ['reports' => ReportResource::collection($reports)]);
+    }
+
+    public function show($id)
+    {
+        $report = $this->service->find($id);
+        return view('reports.show', compact('report'));
+    }
+
+
+        public function reject($id)
+    {
+        $report = $this->service->reject($id);
+        return view('reports.show', compact('report'));
+    }
+
+
+        public function approved($id)
+    {
+        $report = $this->service->approved($id);
+        return view('reports.show', compact('report'));
+    }
+
 }

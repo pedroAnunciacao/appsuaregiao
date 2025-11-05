@@ -1,133 +1,92 @@
 <?php
 
 namespace App\Http\Controllers\API;
-
 use App\Http\Controllers\Controller;
+
+use App\Services\UserService;
 use Illuminate\Http\Request;
-use App\Models\Post;
-use App\Models\User;
-use Illuminate\Support\Facades\Log;
+use App\Http\Resources\User\UserResource;
 
 class UserController extends Controller
 {
-    /**
-     * Banir usuário
-     */
-    public function banUser(Request $request, $id)
+    protected UserService $service;
+
+    public function __construct(UserService $service)
     {
-        $user = User::findOrFail($id);
-        $user->is_banned = true;
-        $user->ban_reason = $request->input('reason');
-        $user->ban_expires_at = $request->input('expires_at'); // null para permanente
-        $user->save();
-        return response()->json(['success' => true]);
+        $this->service = $service;
     }
 
-    /**
-     * Desbanir usuário
-     */
-    public function unbanUser($id)
+    public function index(Request $request)
     {
-        $user = User::findOrFail($id);
-        $user->is_banned = false;
-        $user->ban_reason = null;
-        $user->ban_expires_at = null;
-        $user->save();
-        return response()->json(['success' => true]);
+        $users = $this->service->all($request->query());
+        return view('users.index', ['users' => UserResource::collection($users)]);
     }
 
-    /**
-     * Remover usuário (soft delete)
-     */
-    public function deleteUser($id)
+    public function create()
     {
-        $user = User::findOrFail($id);
-        $user->delete();
-        return response()->json(['success' => true]);
+        return view('users.create');
     }
 
-    /**
-     * Listar usuários
-     */
-    public function listUsers()
+
+        public function login()
     {
-        return User::all();
+        return view('auth.login');
     }
 
-    /**
-     * Atualiza localização do usuário logado
-     */
-    public function setLocation(Request $request)
+
+    public function store(Request $request)
     {
-        $user = $request->user();
-        $user->country = $request->input('country');
-        $user->state = $request->input('state');
-        $user->city = $request->input('city');
-        // Se quiser salvar região, adicione $user->region = $request->input('region');
-        $user->save();
-        return response()->json(['success' => true]);
+        $data = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users',
+            'password' => 'required|min:6',
+        ]);
+
+        $this->service->store($data);
+        return redirect('/users')->with('success', 'Usuário criado!');
     }
 
-    /**
-     * Retorna os dados do usuário logado, incluindo cidade e país
-     * e verifica se o usuário está em sua própria cidade
-     */
-    public function getUserData(Request $request)
-{
-    $user = $request->user();
+    public function edit($id)
+    {
+        $user = $this->service->find($id);
+        return view('users.edit', compact('user'));
+    }
 
-    // Se não houver usuário via cookie, tenta autenticar pelo token Bearer
-    if (!$user) {
-        $token = $request->bearerToken();
-        if ($token) {
-            $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($token);
-            if ($accessToken) {
-                $user = $accessToken->tokenable;
-                auth()->setUser($user);
-            }
+    public function update(Request $request, $id)
+    {
+        $dataRequest = $request->all();
+        $data = [];
+        $data['name']  = $dataRequest['name'];
+        $data['email'] = $dataRequest['email'];
+        if(!empty($dataRequest['password'])){
+        $data['password'] = $dataRequest['password'];
+
         }
+        $this->service->update($id, $data);
+        return redirect('/users')->with('success', 'Usuário atualizado!');
     }
 
-    if (!$user) {
-        return response()->json([
-            'error' => 'Usuário não autenticado'
-        ], 401);
-    }
-
-    $selectedCity = $request->query('selectedCity', null);
-
-    $userCity = $user->city ? strtolower(trim($user->city)) : null;
-    $normalizedSelectedCity = $selectedCity ? strtolower(trim($selectedCity)) : null;
-
-    $isInOwnCity = ($userCity && $normalizedSelectedCity && $userCity === $normalizedSelectedCity);
-
-    return response()->json([
-        'id' => $user->id,
-        'name' => $user->name,
-        'email' => $user->email,
-        'city' => $user->city,
-        'state' => $user->state,
-        'country' => $user->country,
-        'isInOwnCity' => $isInOwnCity,
-        'isAdmin' => $user->is_admin ?? false
-    ]);
-}
-    /**
-     * Retorna os posts da cidade do usuário
-     */
-    public function getUserCityPosts(Request $request)
+    public function destroy($id)
     {
-        $user = $request->user();
+        $this->service->destroy($id);
+        return redirect('/users')->with('success', 'Usuário removido!');
+    }
 
-        if (!$user->city) {
-            return response()->json(['error' => 'Usuário não possui cidade definida'], 400);
-        }
+    public function restore($id)
+    {
+        $this->service->restore($id);
+        return redirect('/users')->with('success', 'Usuário restaurado!');
+    }
 
-        $posts = Post::with('user', 'comments', 'likes')
-                    ->where('city', $user->city)
-                    ->latest()
-                    ->paginate(15);
+    public function ban(Request $request, $id)
+    {
+        $this->service->ban($id, $request->input('ban_reason'), $request->input('ban_expires_at'));
+        return redirect('/users')->with('success', 'Usuário banido!');
+    }
 
-        return response()->json($posts);
+    public function unban($id)
+    {
+        $this->service->unban($id);
+        return redirect('/users')->with('success', 'Usuário desbanido!');
     }
 }

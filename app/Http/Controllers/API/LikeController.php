@@ -2,22 +2,39 @@
 
 namespace App\Http\Controllers\API;
 
-use App\Http\Controllers\Controller;
+use App\Services\LikeService;
 use Illuminate\Http\Request;
-use App\Models\Post;
-use App\Models\Like;
+use App\Http\Controllers\Controller;
 
 class LikeController extends Controller
 {
-    public function toggle(Request $r, Post $post){
-        $like = $post->likes()->where('user_id',$r->user()->id)->first();
+    protected LikeService $service;
 
-        if($like){
-            $like->delete();
-            return response()->json(['liked'=>false]);
-        }
+    public function __construct(LikeService $service)
+    {
+        $this->service = $service;
+    }
 
-        $post->likes()->create(['user_id'=>$r->user()->id]);
-        return response()->json(['liked'=>true]);
+    public function index()
+    {
+        $likes = $this->service->all();
+        return response()->json($likes);
+    }
+
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'post_id' => 'required|exists:posts,id',
+            'user_id' => 'required|integer',
+        ]);
+
+        $like = $this->service->store($data);
+        return response()->json($like, 201);
+    }
+
+    public function destroy(int $id)
+    {
+        $this->service->destroy($id);
+        return response()->json(['message' => 'Like removido com sucesso']);
     }
 }

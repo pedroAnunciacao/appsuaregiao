@@ -5,6 +5,7 @@ namespace App\Scopes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Scope;
+use App\Models\Comment;
 
 class RegionsCityScope implements Scope
 {
@@ -14,6 +15,8 @@ class RegionsCityScope implements Scope
             return;
         }
 
-        $query->where('pais_regiao_cidade_id', request()->pais_regiao_cidade_id);
+        if (!$model instanceof Comment) {
+            $query->where('pais_regiao_cidade_id', request()->pais_regiao_cidade_id);
+        }
     }
 }
