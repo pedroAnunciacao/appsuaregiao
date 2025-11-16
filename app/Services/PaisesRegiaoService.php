@@ -21,6 +21,13 @@ class PaisesRegiaoService
             $query->where('pais_id', $paisId);
         }
 
-        return $query->orderBy('nome')->get();
+        return $query
+            ->orderBy('nome')
+            ->with([
+                'cidades' => function ($q) {
+                    $q->limit(2);
+                }
+            ])
+            ->get();
     }
 }

@@ -13,7 +13,7 @@ use App\Http\Controllers\Admin\SettingController;
 // use App\Http\Controllers\Admin\LocationController;
 use App\Http\Controllers\LocationController;
 use App\Http\Middleware\BindRequestFilter;
-use App\Http\Controllers\API\PaisesContinenteController;
+use App\Http\Controllers\API\ContinenteController;
 use App\Http\Controllers\API\PaisController;
 use App\Http\Controllers\API\PaisesRegiaoController;
 use App\Http\Controllers\API\PaisRegioCidadeController;
@@ -58,7 +58,7 @@ Route::get('auth/me', [AuthController::class, 'me']);
     // Logout
     Route::post('auth/logout', [AuthController::class, 'logout']);
 
-    Route::get('/continentes', [PaisesContinenteController::class, 'index']);
+    Route::get('/continentes', [ContinenteController::class, 'index']);
     Route::get('/paises', [PaisController::class, 'index']);
     Route::get('/regioes', [PaisesRegiaoController::class, 'index']);
     Route::get('/cidades', [PaisRegioCidadeController::class, 'index']);

@@ -4,7 +4,7 @@ namespace App\Services;
 
 use App\Models\PaisesContinente;
 
-class PaisesContinenteService
+class ContinenteService
 {
     protected PaisesContinente $repository;
 
@@ -17,6 +17,7 @@ class PaisesContinenteService
     {
         return $this->repository
             ->orderBy('nome')
+            ->with('paises')
             ->get();
     }
 }

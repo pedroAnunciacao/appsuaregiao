@@ -4,7 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Services\PaisesRegiaoService;
-use App\Http\Resources\PaisesRegiao\PaisesRegiaoResource;
+use App\Http\Resources\Regiao\RegiaoResource;
 use Illuminate\Http\Request;
 
 class PaisesRegiaoController extends Controller
@@ -19,10 +19,10 @@ class PaisesRegiaoController extends Controller
     public function index(Request $request)
     {
         try {
-            $paisId = $request->query('pais_id');
-            $regioes = $this->service->index($paisId);
-            return PaisesRegiaoResource::collection($regioes);
+            $regioes = $this->service->index();
+            return RegiaoResource::collection($regioes);
         } catch (\Exception $e) {
+            dd($e);
             return response()->json(['message' => 'Erro ao buscar regiões.'], 500);
         }
     }

@@ -16,9 +16,14 @@ Route::post('/login', [WebAuthController::class, 'login']);
 Route::post('/logout', [WebAuthController::class, 'logout'])->name('logout');
 
 // Serve o SPA Vue em qualquer rota que não seja API
-Route::get('/portal', function () {
+// Route::get('/portal', function () {
+//     return view('layouts.app');
+// })->where('any', '^(?!api).*$');
+
+Route::get('/', function () {
     return view('layouts.app');
-})->where('any', '^(?!api).*$');
+});
+
 
 
 

@@ -1,18 +1,17 @@
 <?php
 
-namespace App\Http\Resources\PaisesRegiao;
+namespace App\Http\Resources\Cidades;
 
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class PaisesRegiaoResource extends JsonResource
+class CidadesResource extends JsonResource
 {
     public function toArray($request): array
     {
         return [
             'id' => $this->id,
             'nome' => $this->nome,
-            'sigla' => $this->sigla,
-            'pais_id' => $this->pais_id,
+            'regiao_id' => $this->regiao_id,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

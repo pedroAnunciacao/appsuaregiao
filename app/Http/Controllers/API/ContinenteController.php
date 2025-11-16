@@ -3,14 +3,14 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
-use App\Services\PaisesContinenteService;
-use App\Http\Resources\PaisesContinente\PaisesContinenteResource;
+use App\Services\ContinenteService;
+use App\Http\Resources\Continentes\ContinentesResource;
 
-class PaisesContinenteController extends Controller
+class ContinenteController extends Controller
 {
-    protected PaisesContinenteService $service;
+    protected ContinenteService $service;
 
-    public function __construct(PaisesContinenteService $service)
+    public function __construct(ContinenteService $service)
     {
         $this->service = $service;
     }
@@ -19,7 +19,7 @@ class PaisesContinenteController extends Controller
     {
         try {
             $continentes = $this->service->index();
-            return PaisesContinenteResource::collection($continentes);
+            return ContinentesResource::collection($continentes);
         } catch (\Exception $e) {
             return response()->json(['message' => 'Erro ao buscar continentes.'], 500);
         }
